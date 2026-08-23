@@ -22,7 +22,7 @@ const supabase = createClient(
 const GROQ_API_URL =
   "https://api.groq.com/openai/v1/chat/completions";
 
-const allowedCategories = [
+const ALLOWED_CATEGORIES = [
   "Housing",
   "Food",
   "Employment",
@@ -36,101 +36,135 @@ const allowedCategories = [
   "Disability",
 ];
 
-async function fetchPage(url: string) {
-  const response = await fetch(url, {
+function normalizeName(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Read a webpage through Jina Reader.
+ *
+ * This is much more reliable than trying to scrape
+ * government websites directly from a Vercel server.
+ */
+async function readSource(url: string) {
+  const readerUrl =
+    `https://r.jina.ai/${url}`;
+
+  const response = await fetch(readerUrl, {
+    method: "GET",
     headers: {
-      "User-Agent": "LODESTAR-Resource-Research/1.0",
+      Accept: "text/plain",
+      "User-Agent": "LODESTAR/1.0",
     },
     cache: "no-store",
   });
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    throw new Error(
+      `Reader returned HTTP ${response.status}`
+    );
   }
 
-  const html = await response.text();
+  const text = await response.text();
 
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (!text || text.trim().length < 200) {
+    throw new Error(
+      "Reader returned too little content."
+    );
+  }
 
-  return text.slice(0, 45000);
+  return text.slice(0, 50000);
 }
 
-async function extractWithGroq(
-  text: string,
+/**
+ * Ask Groq to extract ONLY resources actually
+ * present in the source.
+ */
+async function extractResources(
+  sourceText: string,
   sourceUrl: string
 ): Promise<DiscoveredResource[]> {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is missing.");
+  }
+
   const prompt = `
-You are LODESTAR's civic resource extraction system.
+You are LODESTAR's civic-resource extraction system.
 
-Extract ONLY real Washington State community resources
-explicitly contained in the source.
+Your job is to extract real community resources from
+the source text below.
 
-Do not invent facts.
+IMPORTANT:
+Only return organizations, programs, agencies,
+services, or resource providers that are explicitly
+mentioned in the source.
 
-SOURCE URL:
+NEVER invent organizations.
+NEVER invent websites.
+NEVER invent phone numbers.
+NEVER invent services.
+
+Only include resources that serve Washington State.
+
+Source URL:
 ${sourceUrl}
 
-RULES:
-
-- Only include organizations or programs explicitly mentioned.
-- Do not invent organizations.
-- Do not invent websites.
-- Do not invent phone numbers.
-- Do not invent services.
-- If a field is unavailable, use "" or null.
-- Only include resources located in or serving Washington State.
-- Ignore advertisements and unrelated businesses.
-- Remove duplicate listings within this source.
-- A government program counts as a resource.
-- A nonprofit organization counts as a resource.
-- A healthcare provider counts as a resource.
-- A food bank or food program counts as a resource.
-- A housing or homelessness program counts as a resource.
-
 Allowed categories:
+${ALLOWED_CATEGORIES.join(", ")}
 
-${allowedCategories.join(", ")}
+For every resource, return:
 
-Return ONLY JSON:
+- organization_name
+- category
+- description
+- state
+- city
+- website
+- phone
+- services
+- languages
+- verified
+
+Set verified to false because LODESTAR will verify
+the resource separately.
+
+If the source contains no usable resources, return
+an empty array.
+
+Return ONLY valid JSON in exactly this format:
 
 {
   "resources": [
     {
-      "organization_name": "",
-      "category": "",
-      "description": "",
+      "organization_name": "Example Organization",
+      "category": "Housing",
+      "description": "What the organization does.",
       "state": "WA",
-      "city": "",
-      "website": "",
+      "city": "Seattle",
+      "website": "https://example.org",
       "phone": null,
-      "services": [],
-      "languages": [],
+      "services": ["housing assistance"],
+      "languages": ["English"],
       "verified": false
     }
   ]
 }
 
-SOURCE CONTENT:
+SOURCE:
 
-${text}
+${sourceText}
 `;
 
   const response = await fetch(GROQ_API_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      Authorization:
+        `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
@@ -142,7 +176,7 @@ ${text}
         {
           role: "system",
           content:
-            "Extract factual civic resources. Never fabricate information.",
+            "Extract factual Washington community resources. Never fabricate information.",
         },
         {
           role: "user",
@@ -153,9 +187,14 @@ ${text}
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    console.error("Groq error:", error);
-    throw new Error("Groq extraction failed.");
+    const errorText = await response.text();
+
+    throw new Error(
+      `Groq returned HTTP ${response.status}: ${errorText.slice(
+        0,
+        300
+      )}`
+    );
   }
 
   const data = await response.json();
@@ -164,45 +203,36 @@ ${text}
     data.choices?.[0]?.message?.content;
 
   if (!content) {
-    throw new Error("Groq returned no content.");
+    throw new Error(
+      "Groq returned no extraction."
+    );
   }
 
   const parsed = JSON.parse(content);
 
-  return Array.isArray(parsed.resources)
-    ? parsed.resources
-    : [];
+  if (!Array.isArray(parsed.resources)) {
+    return [];
+  }
+
+  return parsed.resources;
 }
 
-function normalizeName(name: string) {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function validateResource(
+function isValidResource(
   resource: DiscoveredResource
 ) {
   return (
-    Boolean(resource.organization_name) &&
-    allowedCategories.includes(resource.category) &&
-    resource.state === "WA"
+    typeof resource.organization_name ===
+      "string" &&
+    resource.organization_name.trim().length > 1 &&
+    resource.state === "WA" &&
+    ALLOWED_CATEGORIES.includes(
+      resource.category
+    )
   );
 }
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.GROQ_API_KEY) {
-      return NextResponse.json(
-        {
-          error: "GROQ_API_KEY is missing.",
-        },
-        { status: 500 }
-      );
-    }
-
     const body = await request.json();
 
     const urls: string[] = Array.isArray(body.urls)
@@ -212,7 +242,8 @@ export async function POST(request: Request) {
     if (urls.length === 0) {
       return NextResponse.json(
         {
-          error: "Provide at least one source URL.",
+          error:
+            "Provide at least one source URL.",
         },
         { status: 400 }
       );
@@ -222,7 +253,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "You can process up to 10 sources at a time.",
+            "Maximum 10 sources per scan.",
         },
         { status: 400 }
       );
@@ -232,108 +263,134 @@ export async function POST(request: Request) {
       .map((url) => url.trim())
       .filter(Boolean);
 
-    const discovered: DiscoveredResource[] = [];
+    const allResources: DiscoveredResource[] =
+      [];
 
-    const sourceResults = [];
+    const sourceResults: {
+      url: string;
+      success: boolean;
+      discovered: number;
+      error?: string;
+    }[] = [];
 
+    /*
+     * STEP 1:
+     * Read every source through Jina.
+     */
     for (const url of cleanUrls) {
       try {
-        const parsedUrl = new URL(url);
+        new URL(url);
 
-        if (
-          !["http:", "https:"].includes(
-            parsedUrl.protocol
-          )
-        ) {
-          throw new Error("Invalid protocol");
-        }
+        const sourceText =
+          await readSource(url);
 
-        const text = await fetchPage(
-          parsedUrl.toString()
+        console.log(
+          `LODESTAR: Read ${url} (${sourceText.length} chars)`
         );
 
-        if (text.length < 100) {
-          throw new Error(
-            "Page contained insufficient text"
+        /*
+         * STEP 2:
+         * Send the actual source content to Groq.
+         */
+        const extracted =
+          await extractResources(
+            sourceText,
+            url
           );
-        }
 
-        const resources = await extractWithGroq(
-          text,
-          parsedUrl.toString()
-        );
+        const valid =
+          extracted.filter(
+            isValidResource
+          );
 
-        discovered.push(...resources);
+        allResources.push(...valid);
 
         sourceResults.push({
           url,
           success: true,
-          discovered: resources.length,
+          discovered: valid.length,
         });
+
+        console.log(
+          `LODESTAR: ${valid.length} resources found from ${url}`
+        );
       } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown error";
+
         console.error(
-          `Failed source ${url}:`,
-          error
+          `LODESTAR source failed: ${url}`,
+          message
         );
 
         sourceResults.push({
           url,
           success: false,
           discovered: 0,
+          error: message,
         });
       }
     }
 
-    const validResources =
-      discovered.filter(validateResource);
-
     /*
+     * STEP 3:
      * Deduplicate resources discovered across
-     * multiple sources.
+     * different sources.
      */
     const uniqueResources =
       Array.from(
         new Map(
-          validResources.map((resource) => [
-            normalizeName(
-              resource.organization_name
-            ),
-            resource,
-          ])
+          allResources.map(
+            (resource) => [
+              normalizeName(
+                resource.organization_name
+              ),
+              resource,
+            ]
+          )
         ).values()
       );
 
     /*
-     * Look up existing database resources.
+     * STEP 4:
+     * Check Supabase for resources we already have.
      */
-    const { data: existing, error: lookupError } =
+    const { data: existing, error } =
       await supabase
         .from("resources")
         .select("organization_name");
 
-    if (lookupError) {
+    if (error) {
       console.error(
-        "Supabase lookup error:",
-        lookupError
+        "Supabase lookup failed:",
+        error
       );
 
       return NextResponse.json(
         {
           error:
-            "Unable to check existing resources.",
+            "Supabase lookup failed.",
+          details: error.message,
         },
         { status: 500 }
       );
     }
 
     const existingNames = new Set(
-      (existing || []).map((resource) =>
-        normalizeName(
-          resource.organization_name
-        )
+      (existing || []).map(
+        (resource) =>
+          normalizeName(
+            resource.organization_name
+          )
       )
     );
 
+    /*
+     * STEP 5:
+     * Keep only genuinely new resources.
+     */
     const newResources =
       uniqueResources.filter(
         (resource) =>
@@ -345,71 +402,105 @@ export async function POST(request: Request) {
       );
 
     /*
-     * Insert only genuinely new resources.
+     * STEP 6:
+     * Insert into Supabase.
      */
-    let insertedResources: DiscoveredResource[] =
+    let inserted: DiscoveredResource[] =
       [];
 
     if (newResources.length > 0) {
-      const records = newResources.map(
-        (resource, index) => ({
-          id: `ai-wa-${Date.now()}-${index}`,
-          organization_name:
-            resource.organization_name,
-          category: resource.category,
-          description:
-            resource.description,
-          state: "WA",
-          city: resource.city,
-          website: resource.website,
-          phone: resource.phone,
-          services: resource.services || [],
-          languages:
-            resource.languages || [],
-          verified: false,
-          last_verified: null,
-        })
-      );
+      const records =
+        newResources.map(
+          (resource, index) => ({
+            id: `ai-wa-${Date.now()}-${index}`,
 
-      const { data, error } =
-        await supabase
-          .from("resources")
-          .insert(records)
-          .select("*");
+            organization_name:
+              resource.organization_name,
 
-      if (error) {
+            category:
+              resource.category,
+
+            description:
+              resource.description,
+
+            state: "WA",
+
+            city:
+              resource.city || "Statewide",
+
+            website:
+              resource.website || null,
+
+            phone:
+              resource.phone || null,
+
+            services:
+              resource.services || [],
+
+            languages:
+              resource.languages || [
+                "English",
+              ],
+
+            verified: false,
+
+            last_verified: null,
+          })
+        );
+
+      const {
+        data,
+        error: insertError,
+      } = await supabase
+        .from("resources")
+        .insert(records)
+        .select("*");
+
+      if (insertError) {
         console.error(
-          "Supabase insert error:",
-          error
+          "Supabase insert failed:",
+          insertError
         );
 
         return NextResponse.json(
           {
             error:
               "Resources were discovered but could not be saved.",
+            details:
+              insertError.message,
           },
           { status: 500 }
         );
       }
 
-      insertedResources = data || [];
+      inserted = data || [];
     }
 
+    /*
+     * STEP 7:
+     * Return everything to the admin UI.
+     */
     return NextResponse.json({
       success: true,
 
       stats: {
-        sourcesScanned: cleanUrls.length,
+        sourcesScanned:
+          cleanUrls.length,
+
         sourcesSuccessful:
           sourceResults.filter(
             (source) => source.success
           ).length,
+
         resourcesDiscovered:
-          validResources.length,
+          allResources.length,
+
         uniqueResources:
           uniqueResources.length,
+
         newResources:
           newResources.length,
+
         duplicatesSkipped:
           uniqueResources.length -
           newResources.length,
@@ -417,11 +508,11 @@ export async function POST(request: Request) {
 
       sources: sourceResults,
 
-      resources: insertedResources,
+      resources: inserted,
     });
   } catch (error) {
     console.error(
-      "Batch discovery error:",
+      "LODESTAR discovery error:",
       error
     );
 
