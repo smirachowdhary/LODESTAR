@@ -46,13 +46,9 @@ function normalizeName(name: string) {
 
 /**
  * Read a webpage through Jina Reader.
- *
- * This is much more reliable than trying to scrape
- * government websites directly from a Vercel server.
  */
 async function readSource(url: string) {
-  const readerUrl =
-    `https://r.jina.ai/${url}`;
+  const readerUrl = `https://r.jina.ai/${url}`;
 
   const response = await fetch(readerUrl, {
     method: "GET",
@@ -77,7 +73,17 @@ async function readSource(url: string) {
     );
   }
 
-  return text.slice(0, 50000);
+  /*
+   * IMPORTANT:
+   *
+   * Groq currently has an 8,000 TPM limit for this
+   * model on the current service tier.
+   *
+   * We intentionally keep the source small enough
+   * that the prompt + source + model output stay
+   * under that limit.
+   */
+  return text.slice(0, 16000);
 }
 
 /**
@@ -89,60 +95,41 @@ async function extractResources(
   sourceUrl: string
 ): Promise<DiscoveredResource[]> {
   if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is missing.");
+    throw new Error(
+      "GROQ_API_KEY is missing."
+    );
   }
 
   const prompt = `
 You are LODESTAR's civic-resource extraction system.
 
-Your job is to extract real community resources from
-the source text below.
+Extract real community resources from the source below.
 
-IMPORTANT:
-Only return organizations, programs, agencies,
-services, or resource providers that are explicitly
-mentioned in the source.
+STRICT RULES:
+- Only extract organizations, programs, agencies, or services explicitly mentioned.
+- NEVER invent organizations.
+- NEVER invent websites.
+- NEVER invent phone numbers.
+- NEVER invent services.
+- Only include resources that serve Washington State.
+- Ignore navigation, advertisements, unrelated content, and duplicates.
+- If information is unavailable, use "" or null.
+- Return at most 25 resources.
+- Return ONLY valid JSON.
 
-NEVER invent organizations.
-NEVER invent websites.
-NEVER invent phone numbers.
-NEVER invent services.
-
-Only include resources that serve Washington State.
-
-Source URL:
+SOURCE URL:
 ${sourceUrl}
 
-Allowed categories:
+ALLOWED CATEGORIES:
 ${ALLOWED_CATEGORIES.join(", ")}
 
-For every resource, return:
-
-- organization_name
-- category
-- description
-- state
-- city
-- website
-- phone
-- services
-- languages
-- verified
-
-Set verified to false because LODESTAR will verify
-the resource separately.
-
-If the source contains no usable resources, return
-an empty array.
-
-Return ONLY valid JSON in exactly this format:
-
+OUTPUT FORMAT:
 {
   "resources": [
     {
       "organization_name": "Example Organization",
       "category": "Housing",
-      "description": "What the organization does.",
+      "description": "Short factual description.",
       "state": "WA",
       "city": "Seattle",
       "website": "https://example.org",
@@ -154,8 +141,7 @@ Return ONLY valid JSON in exactly this format:
   ]
 }
 
-SOURCE:
-
+SOURCE CONTENT:
 ${sourceText}
 `;
 
@@ -163,12 +149,12 @@ ${sourceText}
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization:
-        `Bearer ${process.env.GROQ_API_KEY}`,
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
       model: "openai/gpt-oss-20b",
       temperature: 0,
+      max_completion_tokens: 2500,
       response_format: {
         type: "json_object",
       },
@@ -192,7 +178,7 @@ ${sourceText}
     throw new Error(
       `Groq returned HTTP ${response.status}: ${errorText.slice(
         0,
-        300
+        500
       )}`
     );
   }
@@ -208,7 +194,17 @@ ${sourceText}
     );
   }
 
-  const parsed = JSON.parse(content);
+  let parsed: {
+    resources?: DiscoveredResource[];
+  };
+
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(
+      "Groq returned invalid JSON."
+    );
+  }
 
   if (!Array.isArray(parsed.resources)) {
     return [];
@@ -274,8 +270,10 @@ export async function POST(request: Request) {
     }[] = [];
 
     /*
-     * STEP 1:
-     * Read every source through Jina.
+     * Process each source separately.
+     *
+     * This is intentional. We do NOT send multiple
+     * webpages to Groq in one request.
      */
     for (const url of cleanUrls) {
       try {
@@ -288,10 +286,6 @@ export async function POST(request: Request) {
           `LODESTAR: Read ${url} (${sourceText.length} chars)`
         );
 
-        /*
-         * STEP 2:
-         * Send the actual source content to Groq.
-         */
         const extracted =
           await extractResources(
             sourceText,
@@ -335,9 +329,7 @@ export async function POST(request: Request) {
     }
 
     /*
-     * STEP 3:
-     * Deduplicate resources discovered across
-     * different sources.
+     * Deduplicate resources discovered across sources.
      */
     const uniqueResources =
       Array.from(
@@ -354,25 +346,26 @@ export async function POST(request: Request) {
       );
 
     /*
-     * STEP 4:
-     * Check Supabase for resources we already have.
+     * Check Supabase for resources already stored.
      */
-    const { data: existing, error } =
-      await supabase
-        .from("resources")
-        .select("organization_name");
+    const {
+      data: existing,
+      error: lookupError,
+    } = await supabase
+      .from("resources")
+      .select("organization_name");
 
-    if (error) {
+    if (lookupError) {
       console.error(
         "Supabase lookup failed:",
-        error
+        lookupError
       );
 
       return NextResponse.json(
         {
           error:
             "Supabase lookup failed.",
-          details: error.message,
+          details: lookupError.message,
         },
         { status: 500 }
       );
@@ -388,7 +381,6 @@ export async function POST(request: Request) {
     );
 
     /*
-     * STEP 5:
      * Keep only genuinely new resources.
      */
     const newResources =
@@ -402,8 +394,7 @@ export async function POST(request: Request) {
       );
 
     /*
-     * STEP 6:
-     * Insert into Supabase.
+     * Insert new resources.
      */
     let inserted: DiscoveredResource[] =
       [];
@@ -476,10 +467,6 @@ export async function POST(request: Request) {
       inserted = data || [];
     }
 
-    /*
-     * STEP 7:
-     * Return everything to the admin UI.
-     */
     return NextResponse.json({
       success: true,
 
