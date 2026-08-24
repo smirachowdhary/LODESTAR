@@ -44,9 +44,6 @@ function normalizeName(name: string) {
     .trim();
 }
 
-/**
- * Read a webpage through Jina Reader.
- */
 async function readSource(url: string) {
   const readerUrl = `https://r.jina.ai/${url}`;
 
@@ -74,22 +71,13 @@ async function readSource(url: string) {
   }
 
   /*
-   * IMPORTANT:
-   *
-   * Groq currently has an 8,000 TPM limit for this
-   * model on the current service tier.
-   *
-   * We intentionally keep the source small enough
-   * that the prompt + source + model output stay
-   * under that limit.
+   * Keep the request below the current free-tier
+   * token limit while still giving the model
+   * enough information to find resources.
    */
-  return text.slice(0, 16000);
+  return text.slice(0, 14000);
 }
 
-/**
- * Ask Groq to extract ONLY resources actually
- * present in the source.
- */
 async function extractResources(
   sourceText: string,
   sourceUrl: string
@@ -99,45 +87,33 @@ async function extractResources(
   }
 
   const prompt = `
-Extract Washington State civic resources from the source below.
+Extract Washington State civic resources from the source.
 
-RULES:
-- Only use organizations explicitly mentioned in the source.
-- Never invent organizations, websites, phone numbers, or services.
-- Only include resources that serve Washington State.
-- Ignore navigation, advertisements, and unrelated content.
-- Return at most 20 resources.
-- Keep descriptions short.
-- If a field is unknown, use an empty string.
-- Return ONLY a JSON object. No markdown. No explanation.
+Only extract organizations, programs, agencies, or services
+that are explicitly mentioned in the source.
+
+Never invent information.
+
+Only include resources that serve Washington State.
+
+Ignore:
+- navigation
+- advertisements
+- unrelated businesses
+- page metadata
+- duplicate listings
+
+Return no more than 15 resources.
 
 Allowed categories:
 Housing, Food, Employment, Healthcare, Legal, Benefits,
-Family Services, Community Services, Education, Transportation, Disability.
-
-Return exactly this structure:
-
-{
-  "resources": [
-    {
-      "organization_name": "name",
-      "category": "Housing",
-      "description": "short description",
-      "state": "WA",
-      "city": "",
-      "website": "",
-      "phone": null,
-      "services": [],
-      "languages": [],
-      "verified": false
-    }
-  ]
-}
+Family Services, Community Services, Education, Transportation,
+Disability.
 
 SOURCE URL:
 ${sourceUrl}
 
-SOURCE:
+SOURCE CONTENT:
 ${sourceText}
 `;
 
@@ -145,17 +121,123 @@ ${sourceText}
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      Authorization:
+        `Bearer ${process.env.GROQ_API_KEY}`,
     },
     body: JSON.stringify({
       model: "openai/gpt-oss-20b",
+
+      /*
+       * Keep reasoning low so the model spends its
+       * output budget on the actual resource extraction.
+       */
+      reasoning_effort: "low",
+
       temperature: 0,
-      max_completion_tokens: 2500,
+
+      /*
+       * Strict structured output.
+       *
+       * Groq guarantees the response conforms to
+       * this schema for GPT-OSS 20B.
+       */
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "lodestar_resources",
+          strict: true,
+          schema: {
+            type: "object",
+
+            properties: {
+              resources: {
+                type: "array",
+                maxItems: 15,
+
+                items: {
+                  type: "object",
+
+                  properties: {
+                    organization_name: {
+                      type: "string",
+                    },
+
+                    category: {
+                      type: "string",
+                      enum: ALLOWED_CATEGORIES,
+                    },
+
+                    description: {
+                      type: "string",
+                    },
+
+                    state: {
+                      type: "string",
+                    },
+
+                    city: {
+                      type: "string",
+                    },
+
+                    website: {
+                      type: "string",
+                    },
+
+                    phone: {
+                      type: ["string", "null"],
+                    },
+
+                    services: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+
+                    languages: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                      },
+                    },
+
+                    verified: {
+                      type: "boolean",
+                    },
+                  },
+
+                  required: [
+                    "organization_name",
+                    "category",
+                    "description",
+                    "state",
+                    "city",
+                    "website",
+                    "phone",
+                    "services",
+                    "languages",
+                    "verified",
+                  ],
+
+                  additionalProperties: false,
+                },
+              },
+            },
+
+            required: ["resources"],
+
+            additionalProperties: false,
+          },
+        },
+      },
+
+      max_completion_tokens: 3000,
+
       messages: [
         {
           role: "system",
           content:
-            "You extract factual civic resources and return valid JSON only.",
+            "You are LODESTAR's factual civic resource extraction system. Extract only information explicitly present in the supplied source.",
         },
         {
           role: "user",
@@ -183,43 +265,28 @@ ${sourceText}
 
   if (!content) {
     throw new Error(
-      "Groq returned an empty response."
+      "Groq returned an empty structured response."
     );
   }
 
-  /*
-   * Remove accidental markdown fences if the model
-   * adds them despite the prompt.
-   */
-  const cleaned = content
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-
-  let parsed: {
-    resources?: DiscoveredResource[];
-  };
-
   try {
-    parsed = JSON.parse(cleaned);
-  } catch {
+    const parsed = JSON.parse(content);
+
+    if (!Array.isArray(parsed.resources)) {
+      return [];
+    }
+
+    return parsed.resources;
+  } catch (error) {
     console.error(
-      "Groq returned invalid JSON:",
+      "Structured Groq response could not be parsed:",
       content
     );
 
     throw new Error(
-      "Groq returned invalid JSON."
+      "Groq returned an unreadable structured response."
     );
   }
-
-  if (!Array.isArray(parsed.resources)) {
-    return [];
-  }
-
-  return parsed.resources;
 }
 
 function isValidResource(
@@ -229,7 +296,7 @@ function isValidResource(
     typeof resource.organization_name ===
       "string" &&
     resource.organization_name.trim().length > 1 &&
-    resource.state === "WA" &&
+    resource.state.toUpperCase() === "WA" &&
     ALLOWED_CATEGORIES.includes(
       resource.category
     )
@@ -280,9 +347,8 @@ export async function POST(request: Request) {
 
     /*
      * Process each source separately.
-     *
-     * This is intentional. We do NOT send multiple
-     * webpages to Groq in one request.
+     * This prevents multiple pages from being
+     * combined into one oversized Groq request.
      */
     for (const url of cleanUrls) {
       try {
@@ -338,7 +404,8 @@ export async function POST(request: Request) {
     }
 
     /*
-     * Deduplicate resources discovered across sources.
+     * Deduplicate resources discovered across
+     * different sources.
      */
     const uniqueResources =
       Array.from(
@@ -355,7 +422,7 @@ export async function POST(request: Request) {
       );
 
     /*
-     * Check Supabase for resources already stored.
+     * Check what already exists in Supabase.
      */
     const {
       data: existing,
@@ -402,12 +469,12 @@ export async function POST(request: Request) {
           )
       );
 
-    /*
-     * Insert new resources.
-     */
     let inserted: DiscoveredResource[] =
       [];
 
+    /*
+     * Save new resources.
+     */
     if (newResources.length > 0) {
       const records =
         newResources.map(
