@@ -95,53 +95,49 @@ async function extractResources(
   sourceUrl: string
 ): Promise<DiscoveredResource[]> {
   if (!process.env.GROQ_API_KEY) {
-    throw new Error(
-      "GROQ_API_KEY is missing."
-    );
+    throw new Error("GROQ_API_KEY is missing.");
   }
 
   const prompt = `
-You are LODESTAR's civic-resource extraction system.
+Extract Washington State civic resources from the source below.
 
-Extract real community resources from the source below.
-
-STRICT RULES:
-- Only extract organizations, programs, agencies, or services explicitly mentioned.
-- NEVER invent organizations.
-- NEVER invent websites.
-- NEVER invent phone numbers.
-- NEVER invent services.
+RULES:
+- Only use organizations explicitly mentioned in the source.
+- Never invent organizations, websites, phone numbers, or services.
 - Only include resources that serve Washington State.
-- Ignore navigation, advertisements, unrelated content, and duplicates.
-- If information is unavailable, use "" or null.
-- Return at most 25 resources.
-- Return ONLY valid JSON.
+- Ignore navigation, advertisements, and unrelated content.
+- Return at most 20 resources.
+- Keep descriptions short.
+- If a field is unknown, use an empty string.
+- Return ONLY a JSON object. No markdown. No explanation.
 
-SOURCE URL:
-${sourceUrl}
+Allowed categories:
+Housing, Food, Employment, Healthcare, Legal, Benefits,
+Family Services, Community Services, Education, Transportation, Disability.
 
-ALLOWED CATEGORIES:
-${ALLOWED_CATEGORIES.join(", ")}
+Return exactly this structure:
 
-OUTPUT FORMAT:
 {
   "resources": [
     {
-      "organization_name": "Example Organization",
+      "organization_name": "name",
       "category": "Housing",
-      "description": "Short factual description.",
+      "description": "short description",
       "state": "WA",
-      "city": "Seattle",
-      "website": "https://example.org",
+      "city": "",
+      "website": "",
       "phone": null,
-      "services": ["housing assistance"],
-      "languages": ["English"],
+      "services": [],
+      "languages": [],
       "verified": false
     }
   ]
 }
 
-SOURCE CONTENT:
+SOURCE URL:
+${sourceUrl}
+
+SOURCE:
 ${sourceText}
 `;
 
@@ -155,14 +151,11 @@ ${sourceText}
       model: "openai/gpt-oss-20b",
       temperature: 0,
       max_completion_tokens: 2500,
-      response_format: {
-        type: "json_object",
-      },
       messages: [
         {
           role: "system",
           content:
-            "Extract factual Washington community resources. Never fabricate information.",
+            "You extract factual civic resources and return valid JSON only.",
         },
         {
           role: "user",
@@ -190,17 +183,33 @@ ${sourceText}
 
   if (!content) {
     throw new Error(
-      "Groq returned no extraction."
+      "Groq returned an empty response."
     );
   }
+
+  /*
+   * Remove accidental markdown fences if the model
+   * adds them despite the prompt.
+   */
+  const cleaned = content
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
 
   let parsed: {
     resources?: DiscoveredResource[];
   };
 
   try {
-    parsed = JSON.parse(content);
+    parsed = JSON.parse(cleaned);
   } catch {
+    console.error(
+      "Groq returned invalid JSON:",
+      content
+    );
+
     throw new Error(
       "Groq returned invalid JSON."
     );
