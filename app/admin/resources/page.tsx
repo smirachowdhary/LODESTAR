@@ -225,9 +225,6 @@ https://dcyf.wa.gov/services/housing-basic-needs/basic-needs-community-resource-
           />
 
           <div className="mt-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <p className="text-xs leading-5 text-[#89938d]">
-              Maximum 10 sources per scan.
-            </p>
 
             <button
               onClick={discoverResources}

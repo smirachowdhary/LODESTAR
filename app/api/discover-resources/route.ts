@@ -169,7 +169,6 @@ ${sourceText}
             properties: {
               resources: {
                 type: "array",
-                maxItems: 25,
 
                 items: {
                   type: "object",
