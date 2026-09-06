@@ -87,28 +87,45 @@ async function extractResources(
   }
 
   const prompt = `
-Extract Washington State civic resources from the source.
+You are extracting Washington State civic and social service resources from a webpage.
 
-Only extract organizations, programs, agencies, or services
-that are explicitly mentioned in the source.
+Return only real organizations, agencies, programs, or service providers that a Washington resident could reasonably contact or use.
 
-Never invent information.
+IMPORTANT CATEGORY RULE:
+Every resource MUST use exactly ONE of these categories:
 
-Only include resources that serve Washington State.
+- Housing
+- Food
+- Employment
+- Healthcare
+- Legal
+- Benefits
+- Family Services
+- Community Services
+- Education
+- Transportation
+- Disability
 
-Ignore:
-- navigation
-- advertisements
-- unrelated businesses
-- page metadata
-- duplicate listings
+You are NOT allowed to invent new categories.
 
-Return no more than 15 resources.
+Map related services into the closest category:
 
-Allowed categories:
-Housing, Food, Employment, Healthcare, Legal, Benefits,
-Family Services, Community Services, Education, Transportation,
-Disability.
+- domestic violence, shelters, homelessness, rent, utilities -> Housing
+- SNAP, food banks, meals, groceries -> Food
+- jobs, workforce, unemployment, career services -> Employment
+- medical, mental health, counseling, substance use -> Healthcare
+- attorneys, legal aid, immigration law, court help -> Legal
+- cash aid, TANF, Social Security, public benefits -> Benefits
+- childcare, parenting, youth services, family support -> Family Services
+- community centers, immigrant/refugee support, general social services -> Community Services
+- school, training, literacy, education programs -> Education
+- transit, rides, transportation assistance -> Transportation
+- disability services, accessibility, vocational disability support -> Disability
+
+If a service could fit multiple categories, choose the closest single category from the list above.
+
+Do not output a resource if it is only an article, generic informational webpage, or unrelated national organization with no meaningful Washington service connection.
+
 
 SOURCE URL:
 ${sourceUrl}
