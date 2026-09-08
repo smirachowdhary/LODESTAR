@@ -78,6 +78,15 @@ export default function Home() {
         JSON.stringify(data)
       );
 
+      sessionStorage.setItem(
+        "lodestar-situation",
+        message.trim()
+      );
+
+      sessionStorage.removeItem(
+        "lodestar-plan-id"
+      );
+
       setTimeout(() => {
         document
           .getElementById("results")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -58,6 +58,8 @@ type SavedPlan = {
 };
 
 export default function PlanPage() {
+  const initialized = useRef(false);
+
   const [plan, setPlan] = useState<PlanData | null>(null);
   const [user, setUser] = useState<User | null>(null);
 
@@ -79,6 +81,9 @@ export default function PlanPage() {
     useState("");
 
   useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+
     async function initializePlan() {
       const storedPlan =
         sessionStorage.getItem("lodestar-plan");
@@ -116,14 +121,26 @@ export default function PlanPage() {
         );
 
       if (existingPlanId) {
-        const { data: existingPlan } =
-          await supabase
-            .from("plans")
-            .select(
-              "id, completed_steps, reminder_enabled, reminder_time, summary, action_steps"
-            )
-            .eq("id", existingPlanId)
-            .maybeSingle<SavedPlan>();
+        const {
+          data: existingPlanData,
+          error: existingPlanError,
+        } = await supabase
+          .from("plans")
+          .select(
+            "id, completed_steps, reminder_enabled, reminder_time, summary, action_steps"
+          )
+          .eq("id", existingPlanId)
+          .maybeSingle();
+
+        if (existingPlanError) {
+          console.error(
+            "Unable to load saved plan:",
+            existingPlanError
+          );
+        }
+
+        const existingPlan =
+          (existingPlanData as SavedPlan | null) || null;
 
         const samePlan =
           existingPlan &&
@@ -175,74 +192,97 @@ export default function PlanPage() {
     currentUser: User
   ) {
     setSaving(true);
+    setSaveMessage("");
 
-    const timezone =
-      Intl.DateTimeFormat().resolvedOptions()
-        .timeZone ||
-      "America/Los_Angeles";
+    try {
+      const timezone =
+        Intl.DateTimeFormat().resolvedOptions()
+          .timeZone ||
+        "America/Los_Angeles";
 
-    const situation =
-      sessionStorage.getItem(
-        "lodestar-situation"
-      ) ||
-      planData.analysis.summary;
+      const situation =
+        sessionStorage.getItem(
+          "lodestar-situation"
+        ) ||
+        planData.analysis.summary;
 
-    const resourceIds =
-      planData.recommendations.map(
-        (item) => item.resource.id
-      );
+      const resourceIds =
+        planData.recommendations
+          .map((item) => item.resource.id)
+          .filter(Boolean);
 
-    const { data, error } = await supabase
-      .from("plans")
-      .insert({
+      const payload = {
         user_id: currentUser.id,
-
         situation,
-        summary: planData.analysis.summary,
+        summary:
+          planData.analysis.summary || "",
         location:
-          planData.analysis.location,
+          planData.analysis.location || "WA",
         urgency:
-          planData.analysis.urgency,
-
-        needs: planData.analysis.needs,
-
+          planData.analysis.urgency || "normal",
+        needs:
+          planData.analysis.needs || [],
         action_steps:
-          planData.actionPlan,
-
+          planData.actionPlan || [],
         resource_ids: resourceIds,
-
         completed_steps: [],
-
         reminder_enabled: false,
         reminder_time: "09:00",
         timezone,
-      })
-      .select("id")
-      .single();
+      };
 
-    setSaving(false);
+      console.log(
+        "LODESTAR plan save payload:",
+        payload
+      );
 
-    if (error) {
+      const { data, error } = await supabase
+        .from("plans")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (error) {
+        console.error(
+          "Unable to save plan:",
+          error
+        );
+
+        setSaveMessage(
+          `Save failed: ${error.message}`
+        );
+        return;
+      }
+
+      if (!data?.id) {
+        setSaveMessage(
+          "Save failed: Supabase did not return a plan ID."
+        );
+        return;
+      }
+
+      setPlanId(data.id);
+
+      sessionStorage.setItem(
+        "lodestar-plan-id",
+        data.id
+      );
+
+      setSaveMessage("Plan saved.");
+    } catch (error) {
       console.error(
-        "Unable to save plan:",
+        "Unexpected plan save error:",
         error
       );
 
       setSaveMessage(
-        "We couldn't save this plan yet."
+        error instanceof Error
+          ? `Save failed: ${error.message}`
+          : "Save failed: Unknown error."
       );
-
-      return;
+    } finally {
+      setSaving(false);
     }
-
-    setPlanId(data.id);
-
-    sessionStorage.setItem(
-      "lodestar-plan-id",
-      data.id
-    );
-
-    setSaveMessage("Plan saved.");
   }
 
   async function toggleStep(id: string) {
@@ -507,7 +547,13 @@ export default function PlanPage() {
                 </span>
 
                 {user && (
-                  <span className="rounded-full bg-[#f1f3f1] px-3 py-1.5 text-xs font-medium text-[#66716b]">
+                  <span
+                    className={`max-w-xl rounded-full px-3 py-1.5 text-xs font-medium ${
+                      saveMessage.startsWith("Save failed")
+                        ? "bg-red-50 text-red-700"
+                        : "bg-[#f1f3f1] text-[#66716b]"
+                    }`}
+                  >
                     {saving
                       ? "Saving..."
                       : saveMessage ||
@@ -951,6 +997,12 @@ export default function PlanPage() {
               onClick={() => {
                 sessionStorage.removeItem(
                   "lodestar-plan-id"
+                );
+                sessionStorage.removeItem(
+                  "lodestar-plan"
+                );
+                sessionStorage.removeItem(
+                  "lodestar-situation"
                 );
               }}
               className="flex w-fit items-center gap-2 rounded-xl bg-[#173d32] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#235746]"
