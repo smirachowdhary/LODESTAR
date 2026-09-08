@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import { createClient } from "@supabase/supabase-js";
 
 type AnalyzeRequest = {
@@ -505,10 +506,98 @@ function determineLocationMatch(
   return "unknown";
 }
 
+type UserContext = {
+  veteran: boolean;
+  senior: boolean;
+  youth: boolean;
+  disability: boolean;
+  family: boolean;
+};
+
+function detectUserContext(message: string): UserContext {
+  const text = message.toLowerCase();
+
+  return {
+    veteran:
+      /\b(veteran|military|armed forces|served in the military|service member|servicemember)\b/.test(
+        text
+      ),
+    senior:
+      /\b(senior|elderly|older adult|retired|retiree|age 60|age 65|over 60|over 65)\b/.test(
+        text
+      ),
+    youth:
+      /\b(teen|teenager|youth|minor|high school|under 18|child)\b/.test(
+        text
+      ),
+    disability:
+      /\b(disability|disabled|developmental disability|dvr|vocational rehabilitation|accessible)\b/.test(
+        text
+      ),
+    family:
+      /\b(family|families|parent|parents|child|children|kid|kids|baby|babies|pregnant|childcare|daycare)\b/.test(
+        text
+      ),
+  };
+}
+
+function specializedAudiencePenalty(
+  resource: Resource,
+  context: UserContext
+) {
+  const text = [
+    resource.organization_name,
+    resource.category,
+    resource.description,
+    ...(resource.services || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  let penalty = 0;
+
+  // Strong eligibility restrictions: keep these out unless the user
+  // actually indicates that they belong to the audience.
+  if (
+    /\b(veteran|veterans|military|service member|servicemember)\b/.test(text) &&
+    !context.veteran
+  ) {
+    penalty -= 120;
+  }
+
+  if (
+    /\b(senior|seniors|elderly|older adults?|age 60\+|age 65\+)\b/.test(text) &&
+    !context.senior
+  ) {
+    penalty -= 90;
+  }
+
+  if (
+    /\b(disability|disabled|developmental disabilities|vocational rehabilitation)\b/.test(
+      text
+    ) &&
+    !context.disability
+  ) {
+    penalty -= 80;
+  }
+
+  // Youth/family programs are less restrictive because many general
+  // assistance programs mention children or families in their descriptions.
+  if (
+    /\b(youth-only|youth program|teen program|for teens|for minors)\b/.test(text) &&
+    !context.youth
+  ) {
+    penalty -= 80;
+  }
+
+  return penalty;
+}
+
 function calculateResourceScore(
   resource: Resource,
   needs: string[],
-  location: DetectedLocation
+  location: DetectedLocation,
+  context: UserContext
 ): RankedResource {
   const resourceText = [
     resource.organization_name,
@@ -559,6 +648,11 @@ function calculateResourceScore(
     score += 3;
   }
 
+  score += specializedAudiencePenalty(
+    resource,
+    context
+  );
+
   return {
     resource,
     score,
@@ -570,19 +664,22 @@ function calculateResourceScore(
 function rankResources(
   resources: Resource[],
   needs: string[],
-  location: DetectedLocation
+  location: DetectedLocation,
+  context: UserContext
 ) {
   const ranked = resources
     .map((resource) =>
       calculateResourceScore(
         resource,
         needs,
-        location
+        location,
+        context
       )
     )
     .filter(
       (result) =>
-        result.matchedNeeds.length > 0
+        result.matchedNeeds.length > 0 &&
+        result.score > -20
     )
     .sort((a, b) => b.score - a.score);
 
@@ -770,11 +867,16 @@ export async function POST(request: Request) {
       body.message
     );
 
+    const userContext = detectUserContext(
+      body.message
+    );
+
     const recommendations =
       rankResources(
         (resources || []) as Resource[],
         needs,
-        location
+        location,
+        userContext
       );
 
     const actionPlan =
