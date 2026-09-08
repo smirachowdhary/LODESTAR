@@ -175,16 +175,54 @@ async function readSource(url: string) {
   }
 
   /*
-   * Keep the request below the current free-tier
-   * token limit while still giving the model
-   * enough information to find resources.
+   * Keep the full useful page text for chunking.
+   * Cap extremely large pages so one scan cannot
+   * explode into hundreds of model calls.
    */
-  return text.slice(0, 14000);
+  return text.slice(0, 90000);
+}
+
+function chunkSource(
+  text: string,
+  chunkSize = 9000,
+  overlap = 750
+) {
+  const chunks: string[] = [];
+
+  if (text.length <= chunkSize) {
+    return [text];
+  }
+
+  let start = 0;
+
+  while (start < text.length) {
+    const end = Math.min(
+      start + chunkSize,
+      text.length
+    );
+
+    chunks.push(
+      text.slice(start, end)
+    );
+
+    if (end >= text.length) {
+      break;
+    }
+
+    start = Math.max(
+      end - overlap,
+      start + 1
+    );
+  }
+
+  return chunks;
 }
 
 async function extractResources(
   sourceText: string,
-  sourceUrl: string
+  sourceUrl: string,
+  chunkIndex = 1,
+  chunkCount = 1
 ): Promise<DiscoveredResource[]> {
   if (!process.env.GROQ_API_KEY) {
     throw new Error("GROQ_API_KEY is missing.");
@@ -233,6 +271,10 @@ Do not output a resource if it is only an article, generic informational webpage
 
 SOURCE URL:
 ${sourceUrl}
+
+This is chunk ${chunkIndex} of ${chunkCount} from the source page.
+Extract only resources explicitly present in THIS chunk.
+Do not invent resources from other parts of the page.
 
 SOURCE CONTENT:
 ${sourceText}
@@ -345,7 +387,7 @@ ${sourceText}
         },
       },
 
-      max_completion_tokens: 3000,
+      max_completion_tokens: 2200,
 
       messages: [
         {
@@ -469,27 +511,87 @@ export async function POST(request: Request) {
           `LODESTAR: Read ${url} (${sourceText.length} chars)`
         );
 
-        const extracted =
-          await extractResources(
-            sourceText,
-            url
+        const chunks =
+          chunkSource(sourceText);
+
+        console.log(
+          `LODESTAR: ${url} split into ${chunks.length} chunk(s)`
+        );
+
+        const extractedFromSource:
+          DiscoveredResource[] = [];
+
+        for (
+          let chunkIndex = 0;
+          chunkIndex < chunks.length;
+          chunkIndex++
+        ) {
+          const chunk =
+            chunks[chunkIndex];
+
+          console.log(
+            `LODESTAR: Extracting chunk ${
+              chunkIndex + 1
+            }/${chunks.length} from ${url}`
           );
 
+          const extracted =
+            await extractResources(
+              chunk,
+              url,
+              chunkIndex + 1,
+              chunks.length
+            );
+
+          extractedFromSource.push(
+            ...extracted
+          );
+
+          /*
+           * Give Groq's TPM window a little room
+           * between chunks. 429s are still handled
+           * automatically by fetchGroqWithRetry().
+           */
+          if (
+            chunkIndex <
+            chunks.length - 1
+          ) {
+            await sleep(2500);
+          }
+        }
+
         const valid =
-          extracted.filter(
+          extractedFromSource.filter(
             isValidResource
           );
 
-        allResources.push(...valid);
+        const uniqueForSource =
+          Array.from(
+            new Map(
+              valid.map(
+                (resource) => [
+                  normalizeName(
+                    resource.organization_name
+                  ),
+                  resource,
+                ]
+              )
+            ).values()
+          );
+
+        allResources.push(
+          ...uniqueForSource
+        );
 
         sourceResults.push({
           url,
           success: true,
-          discovered: valid.length,
+          discovered:
+            uniqueForSource.length,
         });
 
         console.log(
-          `LODESTAR: ${valid.length} resources found from ${url}`
+          `LODESTAR: ${uniqueForSource.length} resources found from ${url}`
         );
 
         if (cleanUrls.length > 1) {
