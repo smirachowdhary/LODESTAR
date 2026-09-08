@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useState } from "react";
 import { motion } from "framer-motion";
@@ -128,12 +128,28 @@ export default function Home() {
           </a>
         </div>
 
-        <a
-          href="#get-help"
-          className="rounded-full bg-[#173d32] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#235746]"
-        >
-          Get help
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href="/login"
+            className="rounded-full border border-[#d8e1dc] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#f2f6f3]"
+          >
+            Log in
+          </a>
+
+          <a
+            href="/signup"
+            className="rounded-full border border-[#173d32] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef]"
+          >
+            Sign up
+          </a>
+
+          <a
+            href="#get-help"
+            className="rounded-full bg-[#173d32] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#235746]"
+          >
+            Get help
+          </a>
+        </div>
       </nav>
 
       {/* Hero */}
