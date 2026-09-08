@@ -22,6 +22,110 @@ const supabase = createClient(
 const GROQ_API_URL =
   "https://api.groq.com/openai/v1/chat/completions";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getGroqRetryDelayMs(
+  errorText: string,
+  attempt: number
+) {
+  const secondsMatch = errorText.match(
+    /try again in\s+([0-9.]+)s/i
+  );
+
+  const millisecondsMatch = errorText.match(
+    /try again in\s+([0-9.]+)ms/i
+  );
+
+  if (secondsMatch) {
+    return Math.ceil(
+      Number(secondsMatch[1]) * 1000 + 1000
+    );
+  }
+
+  if (millisecondsMatch) {
+    return Math.ceil(
+      Number(millisecondsMatch[1]) + 1000
+    );
+  }
+
+  return [5000, 12000, 20000][attempt] ?? 20000;
+}
+
+async function fetchGroqWithRetry(
+  body: string,
+  maxAttempts = 4
+) {
+  let lastErrorText = "";
+
+  for (
+    let attempt = 0;
+    attempt < maxAttempts;
+    attempt++
+  ) {
+    const response = await fetch(
+      GROQ_API_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            `Bearer ${process.env.GROQ_API_KEY}`,
+        },
+        body,
+        cache: "no-store",
+      }
+    );
+
+    if (response.ok) {
+      return response;
+    }
+
+    const errorText =
+      await response.text();
+
+    lastErrorText = errorText;
+
+    if (response.status !== 429) {
+      throw new Error(
+        `Groq returned HTTP ${response.status}: ${errorText.slice(
+          0,
+          500
+        )}`
+      );
+    }
+
+    if (
+      attempt ===
+      maxAttempts - 1
+    ) {
+      break;
+    }
+
+    const waitMs =
+      getGroqRetryDelayMs(
+        errorText,
+        attempt
+      );
+
+    console.warn(
+      `LODESTAR: Groq rate limited. Retrying in ${waitMs}ms (attempt ${
+        attempt + 2
+      }/${maxAttempts}).`
+    );
+
+    await sleep(waitMs);
+  }
+
+  throw new Error(
+    `Groq returned HTTP 429 after ${maxAttempts} attempts: ${lastErrorText.slice(
+      0,
+      500
+    )}`
+  );
+}
+
 const ALLOWED_CATEGORIES = [
   "Housing",
   "Food",
@@ -134,14 +238,8 @@ SOURCE CONTENT:
 ${sourceText}
 `;
 
-  const response = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization:
-        `Bearer ${process.env.GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
+  const groqBody = JSON.stringify(
+{
       model: "openai/gpt-oss-20b",
 
       /*
@@ -260,19 +358,13 @@ ${sourceText}
           content: prompt,
         },
       ],
-    }),
-  });
+    }
+  );
 
-  if (!response.ok) {
-    const errorText = await response.text();
-
-    throw new Error(
-      `Groq returned HTTP ${response.status}: ${errorText.slice(
-        0,
-        500
-      )}`
+  const response =
+    await fetchGroqWithRetry(
+      groqBody
     );
-  }
 
   const data = await response.json();
 
@@ -399,6 +491,10 @@ export async function POST(request: Request) {
         console.log(
           `LODESTAR: ${valid.length} resources found from ${url}`
         );
+
+        if (cleanUrls.length > 1) {
+          await sleep(5000);
+        }
       } catch (error) {
         const message =
           error instanceof Error
