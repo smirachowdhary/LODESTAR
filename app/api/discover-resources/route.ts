@@ -6,8 +6,8 @@ type DiscoveredResource = {
   category: string;
   description: string;
   state: string;
-  city: string;
-  website: string;
+  city: string | null;
+  website: string | null;
   phone: string | null;
   services: string[];
   languages: string[];
@@ -332,11 +332,11 @@ ${sourceText}
                     },
 
                     city: {
-                      type: "string",
+                      type: ["string", "null"],
                     },
 
                     website: {
-                      type: "string",
+                      type: ["string", "null"],
                     },
 
                     phone: {
