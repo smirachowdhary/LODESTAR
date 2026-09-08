@@ -472,7 +472,9 @@ export default function Home() {
                             <div className="flex items-center gap-2">
 
                               <h4 className="font-semibold">
-                                {item.resource.name}
+                                {item.resource.organization_name ||
+                                  item.resource.name ||
+                                  "Community resource"}
                               </h4>
 
                               {item.resource.verified && (

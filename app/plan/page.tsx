@@ -26,7 +26,9 @@ type PlanStep = {
 type Recommendation = {
   resource: {
     id: string;
-    name: string;
+    name?: string;
+    organization_name?: string;
+    city?: string | null;
     category: string;
     description: string;
     website?: string;
@@ -35,6 +37,7 @@ type Recommendation = {
   };
   score: number;
   matchedNeeds: string[];
+  locationMatch?: "city" | "county" | "statewide" | "other-local" | "unknown";
 };
 
 type PlanData = {
@@ -895,10 +898,9 @@ export default function PlanPage() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold">
-                          {
-                            item.resource
-                              .name
-                          }
+                          {item.resource.organization_name ||
+                            item.resource.name ||
+                            "Community resource"}
                         </h3>
 
                         {item.resource
@@ -919,7 +921,13 @@ export default function PlanPage() {
                     </div>
 
                     <span className="shrink-0 rounded-full bg-[#edf3ef] px-2.5 py-1 text-xs text-[#477765]">
-                      Match
+                      {item.locationMatch === "city"
+                        ? "Local"
+                        : item.locationMatch === "county"
+                          ? "County"
+                          : item.locationMatch === "statewide"
+                            ? "Statewide"
+                            : "Match"}
                     </span>
                   </div>
 
