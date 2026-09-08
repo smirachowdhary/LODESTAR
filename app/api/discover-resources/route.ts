@@ -320,7 +320,6 @@ ${sourceText}
 
                     category: {
                       type: "string",
-                      enum: ALLOWED_CATEGORIES,
                     },
 
                     description: {
@@ -426,7 +425,15 @@ ${sourceText}
       return [];
     }
 
-    return parsed.resources;
+    return parsed.resources.map(
+    (resource: DiscoveredResource) => ({
+        ...resource,
+        category: normalizeCategory(
+        resource.category,
+        resource
+        ),
+    })
+    );
   } catch (error) {
     console.error(
       "Structured Groq response could not be parsed:",
@@ -437,6 +444,107 @@ ${sourceText}
       "Groq returned an unreadable structured response."
     );
   }
+}
+
+function normalizeCategory(
+  category: string,
+  resource: DiscoveredResource
+) {
+  const raw = (category || "").trim();
+
+  if (ALLOWED_CATEGORIES.includes(raw)) {
+    return raw;
+  }
+
+  const text = [
+    raw,
+    resource.description || "",
+    ...(resource.services || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    /disability|disabled|accessibility|deaf|blind|developmental|vocational rehabilitation/.test(
+      text
+    )
+  ) {
+    return "Disability";
+  }
+
+  if (
+    /legal|lawyer|attorney|court|immigration|eviction defense|foreclosure/.test(
+      text
+    )
+  ) {
+    return "Legal";
+  }
+
+  if (
+    /housing|shelter|homeless|rent|utility|energy|domestic violence/.test(
+      text
+    )
+  ) {
+    return "Housing";
+  }
+
+  if (
+    /food|snap|wic|meal|grocery|pantry|hunger/.test(
+      text
+    )
+  ) {
+    return "Food";
+  }
+
+  if (
+    /health|medical|mental|counsel|therapy|substance|dental|clinic/.test(
+      text
+    )
+  ) {
+    return "Healthcare";
+  }
+
+  if (
+    /employment|job|career|workforce|unemployment|apprentice/.test(
+      text
+    )
+  ) {
+    return "Employment";
+  }
+
+  if (
+    /benefit|tanf|cash|social security|financial assistance|tax credit/.test(
+      text
+    )
+  ) {
+    return "Benefits";
+  }
+
+  if (
+    /child|family|parent|youth|foster|adoption|early learning|daycare/.test(
+      text
+    )
+  ) {
+    return "Family Services";
+  }
+
+  if (
+    /education|school|ged|literacy|training|college/.test(
+      text
+    )
+  ) {
+    return "Education";
+  }
+
+  if (
+    /transport|transit|ride|bus|paratransit/.test(
+      text
+    )
+  ) {
+    return "Transportation";
+  }
+
+  return "Community Services";
 }
 
 function isValidResource(
