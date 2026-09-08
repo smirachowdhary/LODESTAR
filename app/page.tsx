@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+import type { User } from "@supabase/supabase-js";
 import {
   ArrowRight,
   MapPin,
@@ -47,6 +50,32 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadUser() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setUser(user);
+      setAuthLoading(false);
+    }
+
+    loadUser();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   async function handleGetHelp() {
     if (!message.trim()) return;
@@ -138,19 +167,30 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
-          <a
-            href="/login"
-            className="rounded-full border border-[#d8e1dc] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#f2f6f3]"
-          >
-            Log in
-          </a>
+          {!authLoading && user ? (
+            <Link
+              href="/dashboard"
+              className="rounded-full border border-[#173d32] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef]"
+            >
+              Dashboard
+            </Link>
+          ) : !authLoading ? (
+            <>
+              <Link
+                href="/login"
+                className="rounded-full border border-[#d8e1dc] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#f2f6f3]"
+              >
+                Log in
+              </Link>
 
-          <a
-            href="/signup"
-            className="rounded-full border border-[#173d32] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef]"
-          >
-            Sign up
-          </a>
+              <Link
+                href="/signup"
+                className="rounded-full border border-[#173d32] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef]"
+              >
+                Sign up
+              </Link>
+            </>
+          ) : null}
 
           <a
             href="#get-help"
