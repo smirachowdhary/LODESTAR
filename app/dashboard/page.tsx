@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   MapPin,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import type { User } from "@supabase/supabase-js";
@@ -183,6 +184,38 @@ export default function DashboardPage() {
     }
 
     router.push("/plan");
+  }
+
+  async function deletePlan(planId: string) {
+    if (!window.confirm("Delete this saved plan? This cannot be undone.")) return;
+
+    const { error } = await supabase.from("plans").delete().eq("id", planId);
+
+    if (error) {
+      console.error("Unable to delete plan:", error);
+      setLoadError("We couldn't delete that plan.");
+      return;
+    }
+
+    setPlans((current) => current.filter((plan) => plan.id !== planId));
+
+    if (sessionStorage.getItem("lodestar-plan-id") === planId) {
+      sessionStorage.removeItem("lodestar-plan-id");
+      sessionStorage.removeItem("lodestar-plan");
+      sessionStorage.removeItem("lodestar-situation");
+    }
+  }
+
+  function planTitle(plan: SavedPlan) {
+    const labels: Record<string, string> = {
+      housing: "Housing", food: "Food", employment: "Employment",
+      healthcare: "Healthcare", legal: "Legal", childcare: "Childcare",
+      "financial assistance": "Financial", education: "Education",
+      transportation: "Transportation", disability: "Disability",
+      "community services": "Community",
+    };
+    const needs = (plan.needs || []).slice(0, 2).map((n) => labels[n] || n);
+    return needs.length ? `${needs.join(" + ")} support plan` : "Community support plan";
   }
 
   if (loading) {
