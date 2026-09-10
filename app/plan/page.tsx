@@ -1,4 +1,4 @@
-"use client";
+
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -730,139 +730,33 @@ export default function PlanPage() {
               </div>
             </aside>
 
-            {/* Daily reminders */}
+            {/* Saved progress */}
             <aside className="rounded-3xl border border-[#e1e8e3] bg-white p-7">
               <div className="flex items-start gap-4">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e8f1eb] text-[#477765]">
-                  <Bell size={20} />
+                  <Check size={20} />
                 </div>
-
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#477765]">
-                    Daily reminders
-                  </p>
-
-                  <h2 className="mt-2 text-xl font-semibold">
-                    Keep your plan moving.
-                  </h2>
+                  <p className="text-sm font-semibold uppercase tracking-[0.14em] text-[#477765]">Your progress</p>
+                  <h2 className="mt-2 text-xl font-semibold">Pick up where you left off.</h2>
                 </div>
               </div>
-
               <p className="mt-4 text-sm leading-6 text-[#66716b]">
-                Get one daily email
-                reminding you about the next
-                unfinished step in this
-                plan.
+                {user
+                  ? "Your completed steps are saved automatically to your LODESTAR account."
+                  : "Log in to save your plan and progress across visits."}
               </p>
-
-              {!user ? (
-                <div className="mt-5 rounded-2xl bg-[#f4f6f4] p-4">
-                  <p className="text-sm leading-6 text-[#66716b]">
-                    Sign in to save your
-                    progress and enable email
-                    reminders.
-                  </p>
-
-                  <Link
-                    href="/login"
-                    className="mt-3 inline-flex rounded-xl bg-[#173d32] px-4 py-2.5 text-sm font-medium text-white"
-                  >
-                    Log in
-                  </Link>
+              {!user && (
+                <Link href="/login" className="mt-5 inline-flex rounded-xl bg-[#173d32] px-4 py-2.5 text-sm font-medium text-white">
+                  Log in to save progress
+                </Link>
+              )}
+              {user && (
+                <div className="mt-5 rounded-2xl bg-[#f4f7f5] p-4 text-sm text-[#607069]">
+                  {allComplete
+                    ? "All steps completed."
+                    : `${steps.length - completedCount} step${steps.length - completedCount === 1 ? "" : "s"} remaining.`}
                 </div>
-              ) : allComplete ? (
-                <div className="mt-5 rounded-2xl bg-[#edf4ef] p-4">
-                  <div className="flex items-center gap-2 text-[#477765]">
-                    <Check size={17} />
-
-                    <span className="text-sm font-medium">
-                      Plan completed
-                    </span>
-                  </div>
-
-                  <p className="mt-2 text-sm leading-6 text-[#66716b]">
-                    You&apos;ve completed
-                    every step, so no
-                    reminders are needed.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="mt-6 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium">
-                        Email me daily
-                      </p>
-
-                      <p className="mt-1 text-xs text-[#7a857f]">
-                        Sent to{" "}
-                        {user.email}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={
-                        toggleReminder
-                      }
-                      disabled={
-                        reminderSaving ||
-                        !planId
-                      }
-                      className={`relative h-7 w-12 rounded-full transition ${
-                        reminderEnabled
-                          ? "bg-[#477765]"
-                          : "bg-[#dce3de]"
-                      } disabled:opacity-50`}
-                      aria-label="Toggle daily reminders"
-                    >
-                      <span
-                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                          reminderEnabled
-                            ? "left-6"
-                            : "left-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {reminderEnabled && (
-                    <div className="mt-5 border-t border-[#edf0ed] pt-5">
-                      <label
-                        htmlFor="reminder-time"
-                        className="text-sm font-medium"
-                      >
-                        Reminder time
-                      </label>
-
-                      <input
-                        id="reminder-time"
-                        type="time"
-                        value={
-                          reminderTime
-                        }
-                        onChange={(e) =>
-                          updateReminderTime(
-                            e.target.value
-                          )
-                        }
-                        className="mt-2 w-full rounded-xl border border-[#dce5df] bg-white px-4 py-3 text-sm outline-none transition focus:border-[#477765]"
-                      />
-
-                      <p className="mt-2 text-xs leading-5 text-[#7a857f]">
-                        We&apos;ll use your
-                        local timezone.
-                      </p>
-                    </div>
-                  )}
-
-                  {reminderSaving && (
-                    <p className="mt-3 text-xs text-[#7a857f]">
-                      Saving reminder
-                      settings...
-                    </p>
-                  )}
-                </>
               )}
             </aside>
           </div>
@@ -983,6 +877,10 @@ export default function PlanPage() {
               )
             )}
           </div>
+        </div>
+
+        <div className="mt-10 rounded-2xl border border-[#e1e8e3] bg-white px-5 py-4 text-sm leading-6 text-[#66716b]">
+          LODESTAR helps you navigate community resources, but program availability and eligibility can change. Confirm current details with the organization before relying on a service.
         </div>
 
         {/* Bottom CTA */}
