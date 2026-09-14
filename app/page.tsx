@@ -52,6 +52,7 @@ export default function Home() {
   const [results, setResults] = useState<any>(null);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function loadUser() {
@@ -81,6 +82,7 @@ export default function Home() {
     if (!message.trim()) return;
 
     setLoading(true);
+    setError("");
 
     try {
       const response = await fetch("/api/analyze", {
@@ -123,6 +125,11 @@ export default function Home() {
       }, 100);
     } catch (error) {
       console.error(error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "We couldn't find resources right now. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -170,7 +177,7 @@ export default function Home() {
           {!authLoading && user ? (
             <Link
               href="/dashboard"
-              className="rounded-full border border-[#173d32] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef]"
+              className="hidden rounded-full border border-[#173d32] px-4 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#edf4ef] sm:inline-flex lg:px-5"
             >
               Dashboard
             </Link>
@@ -178,7 +185,7 @@ export default function Home() {
             <>
               <Link
                 href="/login"
-                className="rounded-full border border-[#d8e1dc] px-5 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#f2f6f3]"
+                className="hidden rounded-full border border-[#d8e1dc] px-4 py-2.5 text-sm font-medium text-[#173d32] transition hover:bg-[#f2f6f3] sm:inline-flex lg:px-5"
               >
                 Log in
               </Link>
@@ -194,7 +201,7 @@ export default function Home() {
 
           <a
             href="#get-help"
-            className="rounded-full bg-[#173d32] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#235746]"
+            className="rounded-full bg-[#173d32] px-4 py-2.5 text-sm font-medium text-white transition hover:bg-[#235746] lg:px-5"
           >
             Get help
           </a>
@@ -257,7 +264,7 @@ export default function Home() {
               }}
               className="mt-9 max-w-2xl rounded-2xl border border-[#dce3de] bg-white p-2 shadow-[0_15px_50px_rgba(23,61,50,0.08)]"
             >
-              <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:px-4">
 
                 <Search
                   size={20}
@@ -272,14 +279,15 @@ export default function Home() {
                       handleGetHelp();
                     }
                   }}
-                  className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-[#9aa49f]"
-                  placeholder="What's going on? Tell us in your own words."
+                  aria-label="Describe the help you need"
+                  className="min-w-0 w-full flex-1 bg-transparent text-base outline-none placeholder:text-[#9aa49f]"
+                  placeholder="What's going on? Include your city or ZIP if you can."
                 />
 
                 <button
                   onClick={handleGetHelp}
                   disabled={loading || !message.trim()}
-                  className="flex shrink-0 items-center gap-2 rounded-xl bg-[#173d32] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#235746] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#173d32] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#235746] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {loading ? "Finding help..." : "Get help"}
 
@@ -288,6 +296,15 @@ export default function Home() {
 
               </div>
             </motion.div>
+
+            {error && (
+              <div
+                role="alert"
+                className="mt-4 max-w-2xl rounded-2xl border border-[#ead9d4] bg-[#fff8f5] px-4 py-3 text-sm leading-6 text-[#7a4d42]"
+              >
+                {error}
+              </div>
+            )}
 
             <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-[#758079]">
 
@@ -302,6 +319,22 @@ export default function Home() {
                 Personalized recommendations
               </span>
 
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              {[
+                "I need help with rent and food in Bellevue.",
+                "I'm a senior in Redmond and need transportation.",
+              ].map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => setMessage(example)}
+                  className="rounded-full border border-[#dce5df] bg-white px-3 py-1.5 text-left text-xs text-[#66716b] transition hover:border-[#aebfb5] hover:text-[#173d32]"
+                >
+                  Try: “{example}”
+                </button>
+              ))}
             </div>
           </div>
 
@@ -465,10 +498,17 @@ export default function Home() {
                 </h3>
 
                 <p className="mt-2 text-sm text-[#7a857f]">
-                  Verified organizations that may be able to help.
+                  Prioritized using your needs, location, and verified resource data.
                 </p>
 
                 <div className="mt-5 space-y-4">
+
+                  {results.recommendations.length === 0 && (
+                    <div className="rounded-2xl border border-[#e4e9e5] bg-[#fbfcfb] p-5 text-sm leading-6 text-[#66716b]">
+                      We couldn't find a strong match yet. Try adding your city or ZIP
+                      and a little more detail about the help you need.
+                    </div>
+                  )}
 
                   {results.recommendations.map(
                     (item: any) => (
@@ -478,7 +518,7 @@ export default function Home() {
                         className="rounded-2xl border border-[#e4e9e5] bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-md"
                       >
 
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 
                           <div className="min-w-0">
 
@@ -525,7 +565,7 @@ export default function Home() {
                               href={item.resource.website}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="shrink-0 rounded-xl bg-[#173d32] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#235746]"
+                              className="inline-flex w-fit shrink-0 rounded-xl bg-[#173d32] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#235746]"
                             >
                               Visit
                             </a>
@@ -542,7 +582,7 @@ export default function Home() {
               </div>
 
               {/* Plan */}
-              <div className="h-fit rounded-3xl bg-[#f1f5f2] p-6">
+              <div className="h-fit rounded-3xl bg-[#f1f5f2] p-6 lg:sticky lg:top-6">
 
                 <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#477765]">
                   Your plan
