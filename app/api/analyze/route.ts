@@ -592,6 +592,88 @@ function specializedAudiencePenalty(
   return penalty;
 }
 
+function specializedAudienceBoost(
+  resource: Resource,
+  context: UserContext
+) {
+  const text = [
+    resource.organization_name,
+    resource.category,
+    resource.description,
+    ...(resource.services || []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  let boost = 0;
+
+  if (
+    context.senior &&
+    /\b(senior|seniors|elderly|older adults?|age 60\+|age 65\+)\b/.test(text)
+  ) {
+    boost += 55;
+  }
+
+  if (
+    context.veteran &&
+    /\b(veteran|veterans|military|service member|servicemember)\b/.test(text)
+  ) {
+    boost += 55;
+  }
+
+  if (
+    context.disability &&
+    /\b(disability|disabled|developmental disabilities|vocational rehabilitation)\b/.test(text)
+  ) {
+    boost += 45;
+  }
+
+  if (
+    context.youth &&
+    /\b(youth|teen|teens|minor|minors|young people)\b/.test(text)
+  ) {
+    boost += 35;
+  }
+
+  if (
+    context.family &&
+    /\b(family|families|parent|parents|children|childcare|daycare|wic)\b/.test(text)
+  ) {
+    boost += 25;
+  }
+
+  return boost;
+}
+
+function canonicalOrganizationName(name: string) {
+  return normalize(name)
+    .replace(/\b(online resource directory|resource directory)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function dedupeRankedResources(items: RankedResource[]) {
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+
+  return items.filter((item) => {
+    if (seenIds.has(item.resource.id)) return false;
+
+    let key = canonicalOrganizationName(item.resource.organization_name);
+
+    // Treat Washington 211 and its online directory as the same service.
+    if (/\bwashington\s*211\b/.test(key)) {
+      key = "washington 211";
+    }
+
+    if (key && seenNames.has(key)) return false;
+
+    seenIds.add(item.resource.id);
+    if (key) seenNames.add(key);
+    return true;
+  });
+}
+
 function calculateResourceScore(
   resource: Resource,
   needs: string[],
@@ -630,13 +712,13 @@ function calculateResourceScore(
     determineLocationMatch(resource, location);
 
   if (locationMatch === "city") {
-    score += 55;
+    score += 90;
   } else if (locationMatch === "county") {
-    score += 40;
+    score += 65;
   } else if (locationMatch === "statewide") {
-    score += 20;
+    score += 25;
   } else if (locationMatch === "other-local") {
-    score -= location.city ? 20 : 0;
+    score -= location.city ? 45 : 0;
   }
 
   if (resource.verified) {
@@ -648,6 +730,11 @@ function calculateResourceScore(
   }
 
   score += specializedAudiencePenalty(
+    resource,
+    context
+  );
+
+  score += specializedAudienceBoost(
     resource,
     context
   );
@@ -682,6 +769,8 @@ function rankResources(
     )
     .sort((a, b) => b.score - a.score);
 
+  const deduped = dedupeRankedResources(ranked);
+
   /*
    * When we know the user's city, prefer:
    * 1. Exact city
@@ -693,7 +782,7 @@ function rankResources(
    * ahead of a statewide option.
    */
   if (location.city) {
-    const preferred = ranked.filter(
+    const preferred = deduped.filter(
       (result) =>
         result.locationMatch === "city" ||
         result.locationMatch === "county" ||
@@ -704,7 +793,7 @@ function rankResources(
       return preferred.slice(0, 8);
     }
 
-    const fallback = ranked.filter(
+    const fallback = deduped.filter(
       (result) =>
         result.locationMatch === "other-local" ||
         result.locationMatch === "unknown"
@@ -716,7 +805,7 @@ function rankResources(
     );
   }
 
-  return ranked.slice(0, 8);
+  return deduped.slice(0, 8);
 }
 
 function createActionPlan(
@@ -937,7 +1026,7 @@ export async function POST(request: Request) {
         error:
           "Something went wrong while analyzing your request.",
       },
-      {
+            {
         status: 500,
       }
     );
