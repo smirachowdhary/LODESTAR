@@ -1,12 +1,12 @@
-LODESTAR
+# LODESTAR
 
-AI-powered civic navigation that helps people find relevant community
+**AI-powered civic navigation that helps people find relevant community
 resources, understand what to do next, and follow through on a
-personalized action plan.
+personalized action plan.**
 
-Live App: https://lodestar-livid.vercel.app/
+**Live App:** https://lodestar-livid.vercel.app/
 
-Overview
+## Overview
 
 Finding public and community assistance can be overwhelming. People may
 know they need help with food, housing, transportation, employment,
@@ -21,104 +21,96 @@ creates an actionable plan.
 Rather than functioning as another directory of links, LODESTAR is
 designed to answer a more useful question:
 
-Given my situation, where should I start?
+> **Given my situation, where should I start?**
 
-Key Features
+## Key Features
 
-Natural-language needs analysis --- users describe their
-situation instead of navigating complicated program categories.
+-   **Natural-language needs analysis** --- users describe their
+    situation instead of navigating complicated program categories.
+-   **Location-aware recommendations** --- city and county matches are
+    prioritized when location information is available.
+-   **Eligibility-aware ranking** --- relevant context such as senior,
+    veteran, youth, disability, and family status can improve
+    recommendations.
+-   **Verified resource database** --- community and government
+    resources are stored with structured information such as services,
+    eligibility, location, contact information, and verification status.
+-   **Personalized action plans** --- LODESTAR converts identified needs
+    into concrete next steps.
+-   **Saved progress** --- authenticated users can save plans, complete
+    action steps, return later, and continue where they left off.
+-   **Resource discovery system** --- an admin workflow can scan trusted
+    resource pages, extract structured information, and add useful
+    services to the resource database.
+-   **Graceful location fallback** --- users can still receive statewide
+    options without providing a location and are prompted to add a city
+    or ZIP for more local results.
+-   **Responsive interface** --- designed for both desktop and mobile
+    use.
 
-Location-aware recommendations --- city and county matches are
-prioritized when location information is available.
+## How It Works
 
-Eligibility-aware ranking --- relevant context such as senior,
-veteran, youth, disability, and family status can improve
-recommendations.
+1.  **Describe the situation**\
+    A user explains what is happening in plain language, for example:\
+    *"I'm a senior in Redmond and need help paying for food and
+    transportation."*
 
-Verified resource database --- community and government
-resources are stored with structured information such as services,
-eligibility, location, contact information, and verification status.
+2.  **Identify needs and context**\
+    LODESTAR analyzes the request to identify needs such as food or
+    transportation, detect available location information, and recognize
+    relevant user context.
 
-Personalized action plans --- LODESTAR converts identified needs
-into concrete next steps.
+3.  **Rank relevant resources**\
+    Resources are scored using factors including need match, geographic
+    relevance, verification status, and specialized-audience relevance.
+    Irrelevant specialized resources are penalized and duplicate
+    organizations are filtered.
 
-Saved progress --- authenticated users can save plans, complete
-action steps, return later, and continue where they left off.
+4.  **Create an action plan**\
+    The user receives prioritized recommendations alongside clear next
+    steps.
 
-Resource discovery system --- an admin workflow can scan trusted
-resource pages, extract structured information, and add useful
-services to the resource database.
+5.  **Save and continue**\
+    Signed-in users can save their plan, mark steps complete, view
+    progress from their dashboard, and reopen the plan later.
 
-Graceful location fallback --- users can still receive statewide
-options without providing a location and are prompted to add a city
-or ZIP for more local results.
+## Example Use Cases
 
-Responsive interface --- designed for both desktop and mobile
-use.
+-   A family behind on rent that also needs food assistance.
+-   A senior looking for transportation and meal support.
+-   Someone who recently lost a job and needs employment and benefits
+    resources.
+-   A resident who knows they need help but does not know which
+    government or nonprofit program to contact.
 
-How It Works
+## Tech Stack
 
-Describe the situation
-A user explains what is happening in plain language, for example:
-"I'm a senior in Redmond and need help paying for food and
-transportation."
+  -----------------------------------------------------------------------
+  Technology                          Purpose
+  ----------------------------------- -----------------------------------
+  **Next.js**                         Full-stack web application
 
-Identify needs and context
-LODESTAR analyzes the request to identify needs such as food or
-transportation, detect available location information, and recognize
-relevant user context.
+  **React**                           User interface
 
-Rank relevant resources
-Resources are scored using factors including need match, geographic
-relevance, verification status, and specialized-audience relevance.
-Irrelevant specialized resources are penalized and duplicate
-organizations are filtered.
+  **TypeScript**                      Application logic and type safety
 
-Create an action plan
-The user receives prioritized recommendations alongside clear next
-steps.
+  **Tailwind CSS**                    Responsive styling
 
-Save and continue
-Signed-in users can save their plan, mark steps complete, view
-progress from their dashboard, and reopen the plan later.
+  **Supabase**                        Authentication, PostgreSQL
+                                      database, and persisted plans
 
-Example Use Cases
+  **Groq API**                        AI-assisted resource extraction
+                                      during resource discovery
 
-A family behind on rent that also needs food assistance.
+  **Jina Reader**                     Reading trusted public resource
+                                      pages for ingestion
 
-A senior looking for transportation and meal support.
+  **Vercel**                          Deployment and hosting
+  -----------------------------------------------------------------------
 
-Someone who recently lost a job and needs employment and benefits
-resources.
+## Architecture
 
-A resident who knows they need help but does not know which
-government or nonprofit program to contact.
-
-Tech Stack
-
-Technology                          Purpose
-
-Next.js                         Full-stack web application
-
-React                           User interface
-
-TypeScript                      Application logic and type safety
-
-Tailwind CSS                    Responsive styling
-
-Supabase                        Authentication, PostgreSQL
-database, and persisted plans
-
-Groq API                        AI-assisted resource extraction
-during resource discovery
-
-Jina Reader                     Reading trusted public resource
-pages for ingestion
-
-Vercel                          Deployment and hosting
-
-Architecture
-
+``` text
                          ┌─────────────────────┐
                          │        User         │
                          └──────────┬──────────┘
@@ -168,106 +160,96 @@ Architecture
                             │  resources   │
                             │   database   │
                             └──────────────┘
+```
 
-Recommendation Logic
+## Recommendation Logic
 
 LODESTAR does more than keyword matching. The recommendation pipeline
 considers:
 
-Whether a resource matches one or more detected needs.
-
-Whether it serves the user's city, county, or the entire state.
-
-Whether the resource is verified.
-
-Whether it is intended for a specialized audience relevant to the
-user.
-
-Whether a specialized resource would be inappropriate for the
-current user.
-
-Duplicate organizations that should not occupy multiple
-recommendation slots.
+-   Whether a resource matches one or more detected needs.
+-   Whether it serves the user's city, county, or the entire state.
+-   Whether the resource is verified.
+-   Whether it is intended for a specialized audience relevant to the
+    user.
+-   Whether a specialized resource would be inappropriate for the
+    current user.
+-   Duplicate organizations that should not occupy multiple
+    recommendation slots.
 
 This allows a resource designed specifically for seniors in King County,
 for example, to rank above a generic statewide directory when the user's
 situation indicates that it is a better match.
 
-Resource Discovery
+## Resource Discovery
 
 LODESTAR includes an administrative resource-ingestion workflow to make
 the resource database easier to maintain and expand.
 
 The workflow can:
 
-Read a trusted public resource page.
-
-Extract structured information from the page.
-
-Normalize resource categories and fields.
-
-Store useful resource information in Supabase.
-
-Make the new resource available to the recommendation engine.
+1.  Read a trusted public resource page.
+2.  Extract structured information from the page.
+3.  Normalize resource categories and fields.
+4.  Store useful resource information in Supabase.
+5.  Make the new resource available to the recommendation engine.
 
 The goal is to support a resource system that can grow without manually
 entering every organization one field at a time.
 
-Authentication & Persistence
+## Authentication & Persistence
 
 LODESTAR uses Supabase Authentication. Signed-in users can:
 
-Save personalized plans.
-
-Track completed action steps.
-
-View saved plans from a dashboard.
-
-Reopen a previous plan.
-
-Continue progress across sessions.
-
-Delete plans they no longer need.
+-   Save personalized plans.
+-   Track completed action steps.
+-   View saved plans from a dashboard.
+-   Reopen a previous plan.
+-   Continue progress across sessions.
+-   Delete plans they no longer need.
 
 Database Row Level Security policies restrict plan access to the
 authenticated user who owns each plan.
 
-Running Locally
+## Running Locally
 
-Prerequisites
+### Prerequisites
 
-Node.js
+-   Node.js
+-   npm
+-   A Supabase project
+-   A Groq API key if using the administrative resource-discovery
+    workflow
 
-npm
+### Setup
 
-A Supabase project
-
-A Groq API key if using the administrative resource-discovery
-workflow
-
-Setup
-
+``` bash
 git clone <YOUR-GITHUB-REPOSITORY-URL>
 cd bridge-ai
 npm install
+```
 
-Create .env.local:
+Create `.env.local`:
 
+``` env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
 GROQ_API_KEY=your_groq_api_key
+```
 
 Then run:
 
+``` bash
 npm run dev
+```
 
-Open http://localhost:3000.
+Open `http://localhost:3000`.
 
-Never commit .env.local or secret API keys to the repository.
+> Never commit `.env.local` or secret API keys to the repository.
 
-Current Scope
+## Current Scope
 
-LODESTAR currently focuses on Washington State. The architecture is
+LODESTAR currently focuses on **Washington State**. The architecture is
 designed so additional locations and resource datasets can be added as
 the project grows.
 
@@ -275,23 +257,27 @@ Resource availability and eligibility can change. LODESTAR helps users
 navigate community resources, but users should confirm current details
 directly with the relevant organization before relying on a service.
 
-Future Improvements
+## Future Improvements
 
-Expand verified resource coverage beyond Washington.
+-   Expand verified resource coverage beyond Washington.
+-   Improve local resource coverage at the city and county level.
+-   Add multilingual navigation.
+-   Add richer resource verification and provenance information.
+-   Continue improving recommendation explanations and accessibility.
+-   Explore optional follow-up tools that help users stay on track after
+    receiving a plan.
 
-Improve local resource coverage at the city and county level.
+## Congressional App Challenge
 
-Add multilingual navigation.
+LODESTAR was developed as a civic-technology project for the
+**Congressional App Challenge**. The project explores how software and
+AI-assisted systems can make fragmented public-resource information
+easier to navigate and turn information into concrete next steps.
 
-Add richer resource verification and provenance information.
+## Author
 
-Continue improving recommendation explanations and accessibility.
+**Smira Chowdhary**
 
-Explore optional follow-up tools that help users stay on track after
-receiving a plan.
+------------------------------------------------------------------------
 
-Author
-
-Smira Chowdhary
-
-LODESTAR --- Find the help you need. Know what to do next.
+**LODESTAR --- Find the help you need. Know what to do next.**
