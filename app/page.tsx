@@ -426,6 +426,19 @@ export default function Home() {
                 {results.analysis.summary}
               </p>
 
+              {results.analysis.locationSpecific === false && (
+                <div
+                  role="status"
+                  className="mt-5 rounded-2xl border border-[#dce5df] bg-[#f4f7f5] px-4 py-3 text-sm leading-6 text-[#52635a]"
+                >
+                  <span className="font-medium text-[#173d32]">
+                    Want more local options?
+                  </span>{" "}
+                  Add your city or ZIP code to your request and LODESTAR will
+                  prioritize resources closer to you.
+                </div>
+              )}
+
               <div className="mt-5 flex flex-wrap gap-2">
 
                 {results.analysis.needs.map(

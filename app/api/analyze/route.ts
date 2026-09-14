@@ -493,17 +493,16 @@ function determineLocationMatch(
   if (
     resourceCity === "statewide" ||
     resourceCity === "washington" ||
-    resourceCity === "wa" ||
-    !resourceCity
+    resourceCity === "wa"
   ) {
     return "statewide";
   }
 
-  if (resourceCity) {
-    return "other-local";
+  if (!resourceCity) {
+    return "unknown";
   }
 
-  return "unknown";
+  return "other-local";
 }
 
 type UserContext = {
@@ -631,17 +630,17 @@ function calculateResourceScore(
     determineLocationMatch(resource, location);
 
   if (locationMatch === "city") {
-    score += 85;
+    score += 55;
   } else if (locationMatch === "county") {
-    score += 60;
+    score += 40;
   } else if (locationMatch === "statewide") {
     score += 20;
   } else if (locationMatch === "other-local") {
-    score -= location.city ? 45 : 0;
+    score -= location.city ? 20 : 0;
   }
 
   if (resource.verified) {
-    score += 25;
+    score += 18;
   }
 
   if (resource.website) {
@@ -659,28 +658,6 @@ function calculateResourceScore(
     matchedNeeds,
     locationMatch,
   };
-}
-
-function canonicalOrganizationName(name: string) {
-  return normalize(name)
-    .replace(/\b(the|department|dept|office|program|services|service|resource|resources|online|directory)\b/g, " ")
-    .replace(/\b(washington state|state of washington|washington)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function dedupeRankedResources(items: RankedResource[]) {
-  const seenIds = new Set<string>();
-  const seenNames = new Set<string>();
-
-  return items.filter((item) => {
-    if (seenIds.has(item.resource.id)) return false;
-    const key = canonicalOrganizationName(item.resource.organization_name);
-    if (key && seenNames.has(key)) return false;
-    seenIds.add(item.resource.id);
-    if (key) seenNames.add(key);
-    return true;
-  });
 }
 
 function rankResources(
@@ -705,8 +682,6 @@ function rankResources(
     )
     .sort((a, b) => b.score - a.score);
 
-  const uniqueRanked = dedupeRankedResources(ranked);
-
   /*
    * When we know the user's city, prefer:
    * 1. Exact city
@@ -718,7 +693,7 @@ function rankResources(
    * ahead of a statewide option.
    */
   if (location.city) {
-    const preferred = uniqueRanked.filter(
+    const preferred = ranked.filter(
       (result) =>
         result.locationMatch === "city" ||
         result.locationMatch === "county" ||
@@ -729,7 +704,7 @@ function rankResources(
       return preferred.slice(0, 8);
     }
 
-    const fallback = uniqueRanked.filter(
+    const fallback = ranked.filter(
       (result) =>
         result.locationMatch === "other-local" ||
         result.locationMatch === "unknown"
@@ -741,7 +716,7 @@ function rankResources(
     );
   }
 
-  return uniqueRanked.slice(0, 8);
+  return ranked.slice(0, 8);
 }
 
 function createActionPlan(
@@ -926,9 +901,10 @@ export async function POST(request: Request) {
         },
 
         locationSpecific: Boolean(location.city || location.zip),
-        locationPrompt: location.city || location.zip
-          ? null
-          : "Add your city or ZIP code for more local recommendations.",
+        locationPrompt:
+          location.city || location.zip
+            ? null
+            : "Add your city or ZIP code for more local recommendations.",
 
         summary: location.city
           ? `LODESTAR identified ${needs.join(
