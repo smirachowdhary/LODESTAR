@@ -263,7 +263,29 @@ function detectLocation(
 }
 
 function extractNeeds(message: string): string[] {
-  const text = message.toLowerCase();
+  const text = normalize(message);
+  const needs: string[] = [];
+
+  /*
+   * Crisis and shelter needs must be detected before lower-priority
+   * needs such as employment. Real messages are often messy, abbreviated,
+   * or contain spelling mistakes, so these patterns intentionally include
+   * common ways people describe the situation instead of relying on one
+   * exact keyword.
+   */
+  const emergencyPattern =
+    /\b(assault|assaulted|asault|asaulted|asalt|asalted|attacked|attack|robbed|robbery|stolen|theft|stuff (was )?taken|belongings (were )?taken|violence|violent|unsafe|in danger|emergency|crisis)\b/i;
+
+  const shelterPattern =
+    /\b(nowhere to (stay|sleep)|no where to (stay|sleep)|no ware to (stay|sleep)|no place to (stay|sleep)|need (a )?(place|somewhere) to stay|homeless|homelessness|shelter|sleeping outside|sleep outside|stranded)\b/i;
+
+  if (emergencyPattern.test(text)) {
+    needs.push("emergency services");
+  }
+
+  if (shelterPattern.test(text)) {
+    needs.push("shelter");
+  }
 
   const categories: Record<string, string[]> = {
     housing: [
@@ -271,12 +293,9 @@ function extractNeeds(message: string): string[] {
       "rental",
       "eviction",
       "evicted",
-      "homeless",
-      "homelessness",
       "apartment",
       "house",
       "housing",
-      "shelter",
       "mortgage",
       "utilities",
       "utility",
@@ -382,50 +401,27 @@ function extractNeeds(message: string): string[] {
     ],
   };
 
-  const needs: string[] = [];
-
-  for (const [category, keywords] of Object.entries(
-    categories
-  )) {
+  for (const [category, keywords] of Object.entries(categories)) {
     if (
-      keywords.some((keyword) =>
-        text.includes(keyword)
-      )
+      !needs.includes(category) &&
+      keywords.some((keyword) => text.includes(keyword))
     ) {
       needs.push(category);
     }
   }
 
-  return needs.length > 0
-    ? needs
-    : ["community services"];
+  return needs.length > 0 ? needs : ["community services"];
 }
 
 function determineUrgency(
   message: string
 ): "high" | "medium" | "normal" {
-  const text = message.toLowerCase();
+  const text = normalize(message);
 
-  const urgentTerms = [
-    "tonight",
-    "today",
-    "evicted",
-    "eviction",
-    "homeless",
-    "no food",
-    "can't eat",
-    "cannot eat",
-    "emergency",
-    "urgent",
-    "immediately",
-    "now",
-    "unsafe",
-    "danger",
-  ];
+  const urgentPattern =
+    /\b(tonight|today|evicted|homeless|nowhere to (stay|sleep)|no where to (stay|sleep)|no ware to (stay|sleep)|no place to (stay|sleep)|assault|assaulted|asault|asaulted|asalt|asalted|attacked|robbed|stolen|theft|unsafe|in danger|emergency|urgent|immediately|right now|crisis)\b/i;
 
-  if (
-    urgentTerms.some((term) => text.includes(term))
-  ) {
+  if (urgentPattern.test(text)) {
     return "high";
   }
 
@@ -440,15 +436,62 @@ function determineUrgency(
     "having trouble",
   ];
 
-  if (
-    moderateTerms.some((term) =>
-      text.includes(term)
-    )
-  ) {
+  if (moderateTerms.some((term) => text.includes(term))) {
     return "medium";
   }
 
   return "normal";
+}
+
+function createFollowUpQuestions(
+  message: string,
+  needs: string[],
+  location: DetectedLocation
+) {
+  const text = normalize(message);
+  const questions: string[] = [];
+
+  const crisisRelated =
+    needs.includes("emergency services") ||
+    needs.includes("shelter");
+
+  if (
+    needs.includes("emergency services") &&
+    /\b(assault|assaulted|asault|asaulted|asalt|asalted|attacked|robbed|stolen|theft|unsafe|in danger)\b/i.test(
+      text
+    )
+  ) {
+    questions.push(
+      "Are you in immediate danger or do you need urgent medical help right now?"
+    );
+  }
+
+  if (crisisRelated && !location.city && !location.zip) {
+    questions.push(
+      "What city or ZIP code are you in right now? Emergency and shelter services are usually local."
+    );
+  }
+
+  if (needs.includes("shelter")) {
+    const shelterTypeAlreadyKnown =
+      /\b(man|men|woman|women|family|families|parent|parents|child|children|youth|teen|minor)\b/i.test(
+        text
+      );
+
+    if (!shelterTypeAlreadyKnown) {
+      questions.push(
+        "What type of shelter should I look for: men, women, families, youth, or another group?"
+      );
+    }
+
+    if (/\b(dog|cat|pet|pets|animal)\b/i.test(text)) {
+      questions.push(
+        "Do you need a shelter that can accommodate your pet or help arrange temporary pet care?"
+      );
+    }
+  }
+
+  return questions;
 }
 
 function determineLocationMatch(
@@ -693,18 +736,43 @@ function calculateResourceScore(
   const matchedNeeds: string[] = [];
 
   for (const need of needs) {
-    const needWords = need
-      .toLowerCase()
-      .split(" ")
-      .filter((word) => word.length > 2);
+    let matched = false;
 
-    const matched = needWords.some((word) =>
-      resourceText.includes(word)
-    );
+    if (need === "emergency services") {
+      matched =
+        /\b(emergency|crisis|police|law enforcement|victim|assault|violence|911|safety)\b/i.test(
+          resourceText
+        ) ||
+        /\bwashington\s*211\b/i.test(resourceText);
+    } else if (need === "shelter") {
+      matched =
+        /\b(shelter|homeless|temporary housing|emergency housing|transitional housing|overnight)\b/i.test(
+          resourceText
+        ) ||
+        /\bwashington\s*211\b/i.test(resourceText);
+    } else {
+      const needWords = need
+        .toLowerCase()
+        .split(" ")
+        .filter((word) => word.length > 2);
+
+      matched = needWords.some((word) =>
+        resourceText.includes(word)
+      );
+    }
 
     if (matched) {
       matchedNeeds.push(need);
-      score += 35;
+
+      if (need === "emergency services") {
+        score += 90;
+      } else if (need === "shelter") {
+        score += 75;
+      } else if (need === "housing") {
+        score += 45;
+      } else {
+        score += 35;
+      }
     }
   }
 
@@ -767,7 +835,21 @@ function rankResources(
         result.matchedNeeds.length > 0 &&
         result.score > -20
     )
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => {
+      const priority = (result: RankedResource) => {
+        if (result.matchedNeeds.includes("emergency services")) return 3;
+        if (result.matchedNeeds.includes("shelter")) return 2;
+        return 1;
+      };
+
+      const priorityDifference = priority(b) - priority(a);
+
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      return b.score - a.score;
+    });
 
   const deduped = dedupeRankedResources(ranked);
 
@@ -811,7 +893,8 @@ function rankResources(
 function createActionPlan(
   needs: string[],
   urgency: "high" | "medium" | "normal",
-  location: DetectedLocation
+  location: DetectedLocation,
+  message: string
 ) {
   const plan: string[] = [];
 
@@ -819,15 +902,41 @@ function createActionPlan(
     ? ` in ${location.city}`
     : "";
 
-  if (urgency === "high") {
+  const text = normalize(message);
+
+  if (needs.includes("emergency services")) {
+    plan.push(
+      "If you are in immediate danger or need urgent medical help, call 911."
+    );
+
+    if (
+      /\b(assault|assaulted|asault|asaulted|asalt|asalted|attacked|robbed|stolen|theft)\b/i.test(
+        text
+      )
+    ) {
+      plan.push(
+        `Contact local law enforcement or a victim-support service${localPhrase} for help reporting the assault or theft and identifying immediate safety resources.`
+      );
+    }
+  } else if (urgency === "high") {
     plan.push(
       `Start with Washington 211 to identify immediate assistance${localPhrase}.`
     );
   }
 
+  if (needs.includes("shelter")) {
+    plan.push(
+      `Find an emergency shelter${localPhrase} that matches your household and accessibility needs${
+        /\b(dog|cat|pet|pets|animal)\b/i.test(text)
+          ? " and can accommodate your pet or help arrange temporary pet care"
+          : ""
+      }.`
+    );
+  }
+
   if (needs.includes("housing")) {
     plan.push(
-      `Explore rental, housing, shelter, and utility assistance options${localPhrase}.`
+      `Explore rental, housing, and utility assistance options${localPhrase}.`
     );
   }
 
@@ -839,7 +948,7 @@ function createActionPlan(
 
   if (needs.includes("employment")) {
     plan.push(
-      `Connect with WorkSource Washington or another workforce program${localPhrase}.`
+      `After immediate safety and shelter needs are addressed, connect with WorkSource Washington or another workforce program${localPhrase}.`
     );
   }
 
@@ -855,9 +964,7 @@ function createActionPlan(
     );
   }
 
-  if (
-    needs.includes("financial assistance")
-  ) {
+  if (needs.includes("financial assistance")) {
     plan.push(
       `Review Washington public benefits and financial assistance programs available${localPhrase}.`
     );
@@ -967,11 +1074,19 @@ export async function POST(request: Request) {
         userContext
       );
 
+    const followUpQuestions =
+      createFollowUpQuestions(
+        body.message,
+        needs,
+        location
+      );
+
     const actionPlan =
       createActionPlan(
         needs,
         urgency,
-        location
+        location,
+        body.message
       );
 
     return NextResponse.json({
@@ -995,17 +1110,19 @@ export async function POST(request: Request) {
             ? null
             : "Add your city or ZIP code for more local recommendations.",
 
+        followUpQuestions,
+
         summary: location.city
           ? `LODESTAR identified ${needs.join(
               ", "
-            )} as areas where you may need support and prioritized resources serving ${location.city}${
+            )} as areas where you may need support. The list is ordered by urgency, with immediate safety and shelter needs first. Resources serving ${location.city}${
               location.county
                 ? ` and ${location.county}`
                 : ""
-            }.`
+            } are prioritized when available.`
           : `LODESTAR identified ${needs.join(
               ", "
-            )} as areas where you may need support.`,
+            )} as areas where you may need support. The list is ordered by urgency, with immediate safety and shelter needs first.`,
 
         resourcesAnalyzed:
           resources?.length || 0,
@@ -1026,7 +1143,7 @@ export async function POST(request: Request) {
         error:
           "Something went wrong while analyzing your request.",
       },
-            {
+      {
         status: 500,
       }
     );

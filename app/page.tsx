@@ -272,6 +272,7 @@ export default function Home() {
                 />
 
                 <input
+                  id="help-input"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={(e) => {
@@ -459,7 +460,59 @@ export default function Home() {
                 {results.analysis.summary}
               </p>
 
-              {results.analysis.locationSpecific === false && (
+              {results.analysis.urgency === "high" &&
+                results.analysis.needs.includes("emergency services") && (
+                  <div
+                    role="alert"
+                    className="mt-5 rounded-2xl border border-[#ead6cf] bg-[#fff7f3] px-4 py-4 text-sm leading-6 text-[#6f483e]"
+                  >
+                    <p className="font-semibold text-[#5d3329]">
+                      Immediate safety comes first.
+                    </p>
+                    <p className="mt-1">
+                      If you are in immediate danger or need urgent medical help,
+                      call 911. LODESTAR can help organize the next resources, but
+                      it is not an emergency-response service.
+                    </p>
+                  </div>
+                )}
+
+              {results.analysis.followUpQuestions?.length > 0 && (
+                <div className="mt-5 rounded-2xl border border-[#dce5df] bg-[#f4f7f5] px-4 py-4 text-sm leading-6 text-[#52635a]">
+                  <p className="font-semibold text-[#173d32]">
+                    A few details would make these results more precise:
+                  </p>
+
+                  <ul className="mt-2 space-y-1.5">
+                    {results.analysis.followUpQuestions.map(
+                      (question: string) => (
+                        <li key={question} className="flex gap-2">
+                          <span aria-hidden="true">•</span>
+                          <span>{question}</span>
+                        </li>
+                      )
+                    )}
+                  </ul>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      document
+                        .getElementById("help-input")
+                        ?.focus();
+                      document
+                        .getElementById("get-help")
+                        ?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                    className="mt-3 font-medium text-[#173d32] underline decoration-[#a9bcb0] underline-offset-4"
+                  >
+                    Add these details to my request
+                  </button>
+                </div>
+              )}
+
+              {results.analysis.locationSpecific === false &&
+                !results.analysis.followUpQuestions?.length && (
                 <div
                   role="status"
                   className="mt-5 rounded-2xl border border-[#dce5df] bg-[#f4f7f5] px-4 py-3 text-sm leading-6 text-[#52635a]"
